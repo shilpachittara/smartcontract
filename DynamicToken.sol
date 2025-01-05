@@ -7,8 +7,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/sailfish/IFactory.sol";
 import {IVault} from "./interfaces/sailfish/IVault.sol";
-import "./LiquidityManager.sol";
-import "./helpers/TokenConverter.sol";
+import "./TokenFactory.sol";
 
 contract DynamicToken is ERC20, ERC20Burnable, Ownable {
     mapping(address => bool) public authorizedTraders;
@@ -32,9 +31,7 @@ contract DynamicToken is ERC20, ERC20Burnable, Ownable {
     constructor(
         string memory _name,
         string memory _symbol,
-        address _factoryManager,
-        address _stablePoolFactory,
-        address _vaultAddress
+        address _factoryManager
     ) ERC20(_name, _symbol) Ownable(msg.sender) {
         reserveTokenBalance = 1_000_000_000 * SCALE;
         _mint(address(this), reserveTokenBalance);
@@ -44,8 +41,6 @@ contract DynamicToken is ERC20, ERC20Burnable, Ownable {
         }
 
         factoryManager = _factoryManager;
-        stablePoolFactory = _stablePoolFactory;
-        vaultAddress = _vaultAddress;
     }
 
     function purchaseTokens() external payable {
@@ -63,7 +58,7 @@ contract DynamicToken is ERC20, ERC20Burnable, Ownable {
             deployLiquidity();
         }
 
-        LiquidityManager(factoryManager).logTokenPurchase(tokensToIssue, msg.value);
+        TokenFactory(factoryManager).recordPurchase(tokensToIssue, msg.value);
 
         _transfer(address(this), msg.sender, tokensToIssue);
         circulatingTokenSupply += tokensToIssue;
@@ -85,13 +80,13 @@ contract DynamicToken is ERC20, ERC20Burnable, Ownable {
 
         circulatingTokenSupply -= amount;
 
-        LiquidityManager(factoryManager).logTokenSale(amount, stableAmount);
+        TokenFactory(factoryManager).recordSale(amount, stableAmount);
     }
 
     function deployLiquidity() internal {
         address pair = IFactory(stablePoolFactory).deploy(
-            address(0), // Native token
-            TokenConverter.convertToToken(IERC20(address(this)))
+            NATIVE_TOKEN,
+            toToken(IERC20(address(this)))
         );
 
         _approve(address(this), vaultAddress, type(uint256).max);
@@ -109,7 +104,7 @@ contract DynamicToken is ERC20, ERC20Burnable, Ownable {
             type(uint256).max
         );
 
-        LiquidityManager(factoryManager).logLiquidityDeployment(pair, reserveTokenBalance, virtualStableBalance);
+        TokenFactory(factoryManager).recordLiquidityInitialization(pair, reserveTokenBalance, virtualStableBalance);
         isLiquidityDeployed = true;
     }
 
